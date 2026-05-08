@@ -3,25 +3,6 @@ console.log('=== Profile Script Loading ===');
 let isEditMode = false;
 let pendingPostImage = null;
 
-const API = {
-  base: window.API_BASE,
-  async request(endpoint, options = {}) {
-    const token = localStorage.getItem('breedlink_token');
-    const headers = { 'Content-Type': 'application/json', ...options.headers };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const res = await fetch(`${this.base}${endpoint}`, { ...options, headers });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || 'Request failed');
-    }
-    return res.json();
-  },
-  get(endpoint) { return this.request(endpoint); },
-  post(endpoint, data) { return this.request(endpoint, { method: 'POST', body: JSON.stringify(data) }); },
-  put(endpoint, data) { return this.request(endpoint, { method: 'PUT', body: JSON.stringify(data) }); },
-  del(endpoint) { return this.request(endpoint, { method: 'DELETE' }); }
-};
-
 let profileData = {
   name: '',
   bio: '',
@@ -35,7 +16,6 @@ let profileData = {
 let posts = [];
 let animals = [];
 
-// Messenger data (will be populated by API)
 let mockContacts = [];
 let mockMessages = {};
 let currentChatId = null;
@@ -179,7 +159,7 @@ function previewMultipleFiles(input, containerId, type) {
   });
 }
 
-// ------------------------- API Data Loaders -------------------------
+// ------------------------- API Data Loaders (Supabase) -------------------------
 async function loadProfile() {
   try {
     const userId = User.getUser().id;
@@ -204,7 +184,6 @@ async function loadProfile() {
   }
 }
 
-
 async function loadPosts() {
   try {
     const { data, error } = await supabase
@@ -218,6 +197,7 @@ async function loadPosts() {
       .order('created_at', { ascending: false });
     
     if (error) throw error;
+    
     posts = data.map(post => ({
       id: post.id,
       author: post.author?.name,
@@ -226,7 +206,13 @@ async function loadPosts() {
       images: post.images,
       likes: post.likes?.length || 0,
       liked: post.likes?.some(l => l.user_id === User.getUser().id) || false,
-      comments: post.comments || [],
+      comments: (post.comments || []).map(comment => ({
+        id: comment.id,
+        author: comment.author?.name,
+        authorImg: comment.author?.profile_picture,
+        text: comment.text,
+        createdAt: comment.created_at
+      })),
       createdAt: post.created_at
     }));
     renderPosts();
@@ -237,7 +223,14 @@ async function loadPosts() {
 
 async function loadAnimals() {
   try {
-    animals = await API.get('/pets');
+    const userId = User.getUser().id;
+    const { data, error } = await supabase
+      .from('pets')
+      .select('*')
+      .eq('owner_id', userId);
+    
+    if (error) throw error;
+    animals = data || [];
     renderAnimals();
   } catch (err) {
     showToast('Failed to load animals', 'error');
@@ -247,7 +240,7 @@ async function loadAnimals() {
 // ------------------------- UI Rendering -------------------------
 function updateAllPostsAuthorImg() {
   posts.forEach(post => {
-    if (post.author?.name === profileData.name) post.authorImg = profileData.profileImg;
+    if (post.author === profileData.name) post.authorImg = profileData.profileImg;
   });
   renderPosts();
 }
@@ -300,9 +293,9 @@ function renderPosts() {
   container.innerHTML = posts.map(post => `
     <div class="post-card reveal" data-post-id="${post.id}">
       <div class="post-header">
-        <img src="${post.authorImg || (post.author?.profilePicture) || '../html/assets/animals/doge.png'}" alt="${post.author?.name || 'User'}">
+        <img src="${post.authorImg || '../html/assets/animals/doge.png'}" alt="${post.author || 'User'}">
         <div class="post-header-info">
-          <div class="post-author">${escapeHtml(post.author?.name || 'Unknown')}</div>
+          <div class="post-author">${escapeHtml(post.author || 'Unknown')}</div>
           <div class="post-time">${formatDate(post.createdAt) || 'Just now'}</div>
         </div>
         ${isEditMode ? `<button class="post-menu" onclick="event.stopPropagation(); openPostMenu(${post.id})" style="display: flex !important;">⋮</button>` : ''}
@@ -314,7 +307,7 @@ function renderPosts() {
         </div>
       ` : ''}
       <div class="post-meta">
-        <span>${post.likes?.length || 0} likes • ${post.comments?.length || 0} comments</span>
+        <span>${post.likes || 0} likes • ${post.comments?.length || 0} comments</span>
       </div>
       <div class="post-actions">
         <button class="${post.liked ? 'liked' : ''}" onclick="toggleLike(${post.id})">
@@ -329,9 +322,9 @@ function renderPosts() {
       <div class="comments-section">
         ${(post.comments || []).map(comment => `
           <div class="comment" data-comment-id="${comment.id}">
-            <img src="${comment.authorImg || comment.author?.profilePicture || '../html/assets/animals/doge.png'}">
+            <img src="${comment.authorImg || '../html/assets/animals/doge.png'}">
             <div class="comment-content">
-              <span class="comment-author">${escapeHtml(comment.author?.name || 'User')}</span>
+              <span class="comment-author">${escapeHtml(comment.author || 'User')}</span>
               <span class="comment-text">${escapeHtml(comment.text)}</span>
             </div>
             ${isEditMode ? `
@@ -383,7 +376,7 @@ function renderAnimals() {
   `).join('');
 }
 
-// ------------------------- Profile Edit Functions -------------------------
+// ------------------------- Profile Edit Functions (Supabase) -------------------------
 function openCoverModal() {
   if (!isEditMode) { showToast('Please click Customize Profile first to edit', 'error'); return; }
   openModal('coverModal');
@@ -414,47 +407,69 @@ function openAddAnimalModal() {
   if (!isEditMode) { showToast('Please click Customize Profile first to edit', 'error'); return; }
   openModal('animalModal');
 }
+
 async function saveCover() {
   const coverInput = document.getElementById('coverInput');
   if (coverInput && coverInput.files && coverInput.files[0]) {
+    const file = coverInput.files[0];
     const reader = new FileReader();
     reader.onload = async function(e) {
       try {
-        await API.put('/user', { coverPhoto: e.target.result });
-        profileData.coverImg = e.target.result;
+        const imageData = e.target.result;
+        const { error } = await supabase
+          .from('profiles')
+          .update({ cover_photo: imageData })
+          .eq('id', User.getUser().id);
+        
+        if (error) throw error;
+        profileData.coverImg = imageData;
         updateProfileUI();
         showToast('Cover photo updated! 📸');
         closeModal('coverModal');
       } catch (err) { showToast('Failed to update cover', 'error'); }
     };
-    reader.readAsDataURL(coverInput.files[0]);
+    reader.readAsDataURL(file);
   } else { showToast('Please select an image first', 'error'); }
 }
+
 async function saveProfile() {
   const profileInput = document.getElementById('profileInput');
   if (profileInput && profileInput.files && profileInput.files[0]) {
+    const file = profileInput.files[0];
     const reader = new FileReader();
     reader.onload = async function(e) {
       try {
-        await API.put('/user', { profilePicture: e.target.result });
-        profileData.profileImg = e.target.result;
-        if (User.current) User.current.avatar = e.target.result;
+        const imageData = e.target.result;
+        const { error } = await supabase
+          .from('profiles')
+          .update({ profile_picture: imageData })
+          .eq('id', User.getUser().id);
+        
+        if (error) throw error;
+        profileData.profileImg = imageData;
+        if (User.current) User.current.avatar = imageData;
         const profileBtn = document.getElementById('profileBtn');
-        if (profileBtn) profileBtn.innerHTML = `<img src="${e.target.result}" alt="Profile">`;
+        if (profileBtn) profileBtn.innerHTML = `<img src="${imageData}" alt="Profile">`;
         updateAllPostsAuthorImg();
         updateProfileUI();
         showToast('Profile photo updated! 👤');
         closeModal('profileModal');
       } catch (err) { showToast('Failed to update profile photo', 'error'); }
     };
-    reader.readAsDataURL(profileInput.files[0]);
+    reader.readAsDataURL(file);
   } else { showToast('Please select an image first', 'error'); }
 }
+
 async function saveName() {
   const input = document.getElementById('nameInput');
   if (input && input.value.trim()) {
     try {
-      await API.put('/user', { name: input.value.trim() });
+      const { error } = await supabase
+        .from('profiles')
+        .update({ name: input.value.trim() })
+        .eq('id', User.getUser().id);
+      
+      if (error) throw error;
       profileData.name = input.value.trim();
       updateProfileUI();
       showToast('Name updated! ✏️');
@@ -462,11 +477,17 @@ async function saveName() {
     } catch (err) { showToast('Failed to update name', 'error'); }
   }
 }
+
 async function saveBio() {
   const input = document.getElementById('bioInput');
   if (input && input.value.trim()) {
     try {
-      await API.put('/user', { bio: input.value.trim() });
+      const { error } = await supabase
+        .from('profiles')
+        .update({ bio: input.value.trim() })
+        .eq('id', User.getUser().id);
+      
+      if (error) throw error;
       profileData.bio = input.value.trim();
       updateProfileUI();
       showToast('Bio updated! 📝');
@@ -474,12 +495,18 @@ async function saveBio() {
     } catch (err) { showToast('Failed to update bio', 'error'); }
   }
 }
+
 async function saveTag() {
   const input = document.getElementById('tagInput');
   if (input && input.value.trim()) {
     const newTags = [...profileData.tags, input.value.trim()];
     try {
-      await API.put('/user', { tags: newTags });
+      const { error } = await supabase
+        .from('profiles')
+        .update({ tags: newTags })
+        .eq('id', User.getUser().id);
+      
+      if (error) throw error;
       profileData.tags = newTags;
       updateProfileUI();
       input.value = '';
@@ -488,18 +515,25 @@ async function saveTag() {
     } catch (err) { showToast('Failed to add tag', 'error'); }
   }
 }
+
 async function removeTag(element) {
   if (element && element.parentElement) {
     const tagText = element.parentElement.textContent.replace('×', '').trim();
     const newTags = profileData.tags.filter(t => t !== tagText);
     try {
-      await API.put('/user', { tags: newTags });
+      const { error } = await supabase
+        .from('profiles')
+        .update({ tags: newTags })
+        .eq('id', User.getUser().id);
+      
+      if (error) throw error;
       profileData.tags = newTags;
       element.parentElement.remove();
       showToast('Tag removed 🗑️');
     } catch (err) { showToast('Failed to remove tag', 'error'); }
   }
 }
+
 function openContactModal() {
   if (!isEditMode) { showToast('Please click Customize Profile first to edit', 'error'); return; }
   const emailSpan = document.querySelector('#contactEmail span:last-child');
@@ -516,14 +550,21 @@ function openContactModal() {
   if (locationInput) locationInput.value = location;
   openModal('contactModal');
 }
+
 async function saveContact() {
   const email = document.getElementById('contactEmailInput')?.value.trim();
   const phone = document.getElementById('contactPhoneInput')?.value.trim();
   const location = document.getElementById('contactLocationInput')?.value.trim();
   if (!email || !phone || !location) { showToast('Please fill in all fields', 'error'); return; }
   try {
-    await API.put('/user', { contact: { email, phone, location } });
-    profileData.contact = { email, phone, location };
+    const newContact = { email, phone, location };
+    const { error } = await supabase
+      .from('profiles')
+      .update({ contact: newContact })
+      .eq('id', User.getUser().id);
+    
+    if (error) throw error;
+    profileData.contact = newContact;
     const emailSpan = document.querySelector('#contactEmail span:last-child');
     const phoneSpan = document.querySelector('#contactPhone span:last-child');
     const locationSpan = document.querySelector('#contactLocation span:last-child');
@@ -534,6 +575,7 @@ async function saveContact() {
     closeModal('contactModal');
   } catch (err) { showToast('Failed to update contact', 'error'); }
 }
+
 function showConnections() { showToast(`You have ${profileData.stats.connections} connections! 🤝`); }
 function showBioModal() {
   const bioContent = document.getElementById('bioContent');
@@ -558,18 +600,17 @@ function showBioModal() {
 function showLitters() { showToast(`Total litters: ${animals.length} 🐾`); }
 function showReviews() { showToast(`Rating: ${profileData.stats.rating} ⭐ from verified breeders`); }
 
-// ------------------------- Post Actions (API) -------------------------
+// ------------------------- Post Actions (Supabase) -------------------------
 async function addPost() {
   const statusInput = document.getElementById('statusInput');
   if (!statusInput) return;
   const text = statusInput.value.trim();
   if (text || pendingPostImage) {
-    let imageUrl = pendingPostImage;
+    let imageUrl = null;
     if (pendingPostImage && pendingPostImage.startsWith('data:')) {
-      // Upload image to Supabase Storage
       const blob = await fetch(pendingPostImage).then(r => r.blob());
       const fileName = `${Date.now()}.jpg`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('post-images')
         .upload(fileName, blob);
       if (!uploadError) {
@@ -590,17 +631,35 @@ async function addPost() {
       .select();
     
     if (error) throw error;
-    posts.unshift(data[0]);
+    
+    const newPost = {
+      id: data[0].id,
+      author: profileData.name,
+      authorImg: profileData.profileImg,
+      text: text || '',
+      images: imageUrl ? [imageUrl] : [],
+      likes: 0,
+      liked: false,
+      comments: [],
+      createdAt: new Date().toISOString()
+    };
+    posts.unshift(newPost);
     renderPosts();
     statusInput.value = '';
     pendingPostImage = null;
+    const postImageInput = document.getElementById('postImageInput');
+    if (postImageInput) postImageInput.value = '';
+    const imagePreview = document.getElementById('postImagePreview');
+    if (imagePreview) imagePreview.innerHTML = '';
     showToast('Post published! 📢');
-  }
+  } else { showToast('Please write something or attach an image', 'error'); }
 }
+
 function handlePostImageSelect(e) {
   const file = e.target.files[0];
   if (file) previewPostImage(e.target, 'postImagePreview');
 }
+
 function openPostMenu(postId) { currentPostId = postId; openModal('postMenuModal'); }
 function editCurrentPost() {
   const post = posts.find(p => p.id === currentPostId);
@@ -611,23 +670,37 @@ function editCurrentPost() {
     openModal('editPostModal');
   }
 }
+
 async function savePostEdit() {
   const newText = document.getElementById('editPostText');
   if (currentPostId && newText) {
     try {
-      const updated = await API.put(`/posts/${currentPostId}`, { text: newText.value.trim() || "" });
-      const index = posts.findIndex(p => p.id === currentPostId);
-      if (index !== -1) posts[index] = updated;
+      const { error } = await supabase
+        .from('posts')
+        .update({ text: newText.value.trim() || "" })
+        .eq('id', currentPostId)
+        .eq('author_id', User.getUser().id);
+      
+      if (error) throw error;
+      const post = posts.find(p => p.id === currentPostId);
+      if (post) post.text = newText.value.trim() || "";
       renderPosts();
       showToast('Post updated! ✏️');
       closeModal('editPostModal');
     } catch (err) { showToast('Failed to update post', 'error'); }
   }
 }
+
 async function deleteCurrentPost() {
   if (confirm('Are you sure you want to delete this post?')) {
     try {
-      await API.del(`/posts/${currentPostId}`);
+      const { error } = await supabase
+        .from('posts')
+        .delete()
+        .eq('id', currentPostId)
+        .eq('author_id', User.getUser().id);
+      
+      if (error) throw error;
       posts = posts.filter(p => p.id !== currentPostId);
       renderPosts();
       showToast('Post deleted 🗑️');
@@ -635,6 +708,7 @@ async function deleteCurrentPost() {
     } catch (err) { showToast('Failed to delete post', 'error'); }
   }
 }
+
 function removePostImage() {
   pendingPostImage = null;
   const preview = document.getElementById('editPostPreview');
@@ -643,85 +717,151 @@ function removePostImage() {
   if (imageInput) imageInput.value = '';
   showToast('Image removed');
 }
+
 async function toggleLike(postId) {
   try {
-    const result = await API.post(`/posts/${postId}/like`, {});
+    const userId = User.getUser().id;
     const post = posts.find(p => p.id === postId);
-    if (post) {
-      post.liked = result.liked;
-      post.likes = result.likes;
-      renderPosts();
+    if (!post) return;
+    
+    if (post.liked) {
+      const { error } = await supabase
+        .from('likes')
+        .delete()
+        .eq('post_id', postId)
+        .eq('user_id', userId);
+      if (error) throw error;
+      post.liked = false;
+      post.likes--;
+    } else {
+      const { error } = await supabase
+        .from('likes')
+        .insert({ post_id: postId, user_id: userId });
+      if (error) throw error;
+      post.liked = true;
+      post.likes++;
     }
+    renderPosts();
   } catch (err) { showToast('Failed to like', 'error'); }
 }
+
 async function toggleSave(postId) {
   const post = posts.find(p => p.id === postId);
   if (post) {
     try {
-      const result = await API.post(`/posts/${postId}/save`, {});
-      post.saved = result.saved;
+      if (post.saved) {
+        const { error } = await supabase
+          .from('saved_posts')
+          .delete()
+          .eq('post_id', postId)
+          .eq('user_id', User.getUser().id);
+        if (error) throw error;
+        post.saved = false;
+      } else {
+        const { error } = await supabase
+          .from('saved_posts')
+          .insert({ post_id: postId, user_id: User.getUser().id });
+        if (error) throw error;
+        post.saved = true;
+      }
       renderPosts();
       showToast(post.saved ? 'Post saved! 🔖' : 'Post unsaved 📑');
     } catch (err) { showToast('Failed to save post', 'error'); }
   }
 }
+
 async function addComment(postId) {
   const input = document.getElementById(`comment-input-${postId}`);
   if (!input) return;
   const text = input.value.trim();
   if (text) {
     try {
-      const updatedComments = await API.post(`/posts/${postId}/comment`, { text });
+      const { data, error } = await supabase
+        .from('comments')
+        .insert({
+          post_id: postId,
+          author_id: User.getUser().id,
+          text: text
+        })
+        .select();
+      
+      if (error) throw error;
+      
+      const newComment = {
+        id: data[0].id,
+        author: profileData.name,
+        authorImg: profileData.profileImg,
+        text: text,
+        createdAt: new Date().toISOString()
+      };
+      
       const post = posts.find(p => p.id === postId);
       if (post) {
-        post.comments = updatedComments;
+        post.comments.push(newComment);
         renderPosts();
-        showToast('Comment added! 💬');
-        input.value = '';
       }
+      showToast('Comment added! 💬');
+      input.value = '';
     } catch (err) { showToast('Failed to add comment', 'error'); }
   }
 }
+
 function focusComment(postId) { const input = document.getElementById(`comment-input-${postId}`); if (input) input.focus(); }
 function sharePost(postId) { copyToClipboard(`https://breedlink.com/post/${postId}`); showToast('Link copied to clipboard! 🔗'); }
+
 function editComment(postId, commentId, currentText) {
   currentComment = { postId, commentId };
   const editText = document.getElementById('editCommentText');
   if (editText) editText.value = currentText;
   openModal('commentEditModal');
 }
+
 async function saveCommentEdit() {
   if (!currentComment) return;
   const newText = document.getElementById('editCommentText');
   if (newText && newText.value.trim()) {
     try {
-      const updatedComments = await API.put(`/posts/${currentComment.postId}/comments/${currentComment.commentId}`, { text: newText.value.trim() });
+      const { error } = await supabase
+        .from('comments')
+        .update({ text: newText.value.trim() })
+        .eq('id', currentComment.commentId)
+        .eq('author_id', User.getUser().id);
+      
+      if (error) throw error;
       const post = posts.find(p => p.id === currentComment.postId);
       if (post) {
-        post.comments = updatedComments;
+        const comment = post.comments.find(c => c.id === currentComment.commentId);
+        if (comment) comment.text = newText.value.trim();
         renderPosts();
-        showToast('Comment updated ✏️');
       }
+      showToast('Comment updated ✏️');
     } catch (err) { showToast('Failed to update comment', 'error'); }
   }
   closeModal('commentEditModal');
   currentComment = null;
 }
+
 async function deleteComment(postId, commentId) {
   if (confirm('Delete this comment?')) {
     try {
-      const updatedComments = await API.del(`/posts/${postId}/comments/${commentId}`);
+      const { error } = await supabase
+        .from('comments')
+        .delete()
+        .eq('id', commentId)
+        .eq('author_id', User.getUser().id);
+      
+      if (error) throw error;
       const post = posts.find(p => p.id === postId);
       if (post) {
-        post.comments = updatedComments;
+        post.comments = post.comments.filter(c => c.id !== commentId);
         renderPosts();
-        showToast('Comment deleted 🗑️');
       }
+      showToast('Comment deleted 🗑️');
     } catch (err) { showToast('Failed to delete comment', 'error'); }
   }
 }
 
-// ------------------------- Animal Actions (API) -------------------------
+// ------------------------- Animal Actions (Supabase) -------------------------
 function viewAnimal(animalId) {
   const animal = animals.find(a => a.id === animalId);
   if (!animal) return;
@@ -756,10 +896,12 @@ function viewAnimal(animalId) {
   `;
   openModal('viewAnimalModal');
 }
+
 function openDocument(docUrl) {
   if (docUrl.startsWith('data:') || docUrl.startsWith('blob:')) window.open(docUrl, '_blank');
   else showToast(`Opening document: ${docUrl}`, 'success');
 }
+
 function editAnimal(animalId) {
   if (!isEditMode) { showToast('Please click Customize Profile first to edit', 'error'); return; }
   currentAnimalId = animalId;
@@ -789,12 +931,14 @@ function editAnimal(animalId) {
   if (docInput) docInput.onchange = function(e) { previewMultipleFiles(e.target, 'edit_documentsPreview', 'document'); };
   openModal('animalDetailModal');
 }
+
 async function saveAnimalDetails() {
   const animal = animals.find(a => a.id === currentAnimalId);
   if (!animal) return;
   const name = document.getElementById('edit_name')?.value.trim();
   const breed = document.getElementById('edit_breed')?.value.trim();
   if (!name || !breed) { showToast('Name and breed are required!', 'error'); return; }
+  
   animal.name = name;
   animal.breed = breed;
   animal.gender = document.getElementById('edit_gender')?.value || animal.gender;
@@ -802,6 +946,7 @@ async function saveAnimalDetails() {
   animal.status = document.getElementById('edit_status')?.value.trim() || animal.status;
   animal.litterCount = parseInt(document.getElementById('edit_litterCount')?.value) || 0;
   animal.description = document.getElementById('edit_description')?.value.trim() || '';
+  
   const imgInput = document.getElementById('edit_imageInput');
   if (imgInput && imgInput.files && imgInput.files[0]) {
     const reader = new FileReader();
@@ -811,9 +956,25 @@ async function saveAnimalDetails() {
     };
     reader.readAsDataURL(imgInput.files[0]);
   } else { await finishSave(); }
+  
   async function finishSave() {
     try {
-      await API.put(`/pets/${currentAnimalId}`, animal);
+      const { error } = await supabase
+        .from('pets')
+        .update({
+          name: animal.name,
+          breed: animal.breed,
+          gender: animal.gender,
+          age: animal.age,
+          status: animal.status,
+          image: animal.image,
+          description: animal.description,
+          litter_count: animal.litterCount
+        })
+        .eq('id', currentAnimalId)
+        .eq('owner_id', User.getUser().id);
+      
+      if (error) throw error;
       const index = animals.findIndex(a => a.id === currentAnimalId);
       if (index !== -1) animals[index] = animal;
       renderAnimals();
@@ -822,6 +983,7 @@ async function saveAnimalDetails() {
     } catch (err) { showToast('Failed to update animal', 'error'); }
   }
 }
+
 async function saveAnimal() {
   const name = document.getElementById('animalName')?.value.trim();
   const breed = document.getElementById('animalBreed')?.value.trim();
@@ -829,27 +991,59 @@ async function saveAnimal() {
   const age = document.getElementById('animalAge')?.value.trim();
   const status = document.getElementById('animalStatus')?.value.trim();
   const preview = document.getElementById('animalPreview');
+  
   if (!name || !breed) { showToast('Please fill in Name and Breed!', 'error'); return; }
+  
   let imageUrl = 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=400';
-  if (preview && preview.style.backgroundImage && preview.style.backgroundImage !== 'none') imageUrl = preview.style.backgroundImage.slice(4, -1).replace(/"/g, "");
+  if (preview && preview.style.backgroundImage && preview.style.backgroundImage !== 'none') {
+    imageUrl = preview.style.backgroundImage.slice(4, -1).replace(/"/g, "");
+  }
+  
   try {
-    const newAnimal = await API.post('/pets', { name, breed, gender, age, status, image: imageUrl, litterCount: 0, partner: '', healthCertificates: [], healthDocuments: [], description: '' });
-    animals.push(newAnimal);
+    const { data, error } = await supabase
+      .from('pets')
+      .insert({
+        owner_id: User.getUser().id,
+        name: name,
+        breed: breed,
+        gender: gender || 'Unknown',
+        age: age || 'Unknown',
+        status: status || 'Available',
+        image: imageUrl,
+        description: '',
+        litter_count: 0
+      })
+      .select();
+    
+    if (error) throw error;
+    animals.push(data[0]);
     renderAnimals();
+    
     document.getElementById('animalName').value = '';
     document.getElementById('animalBreed').value = '';
     document.getElementById('animalGender').value = '';
     document.getElementById('animalAge').value = '';
     document.getElementById('animalStatus').value = '';
-    if (preview) { preview.style.backgroundImage = ''; preview.classList.remove('has-image'); preview.innerHTML = '<span>📤 Click to upload animal photo</span>'; }
+    if (preview) {
+      preview.style.backgroundImage = '';
+      preview.classList.remove('has-image');
+      preview.innerHTML = '<span>📤 Click to upload animal photo</span>';
+    }
     showToast('Animal added successfully! 🐾');
     closeModal('animalModal');
   } catch (err) { showToast('Failed to add animal', 'error'); }
 }
+
 async function deleteAnimal(id) {
   if (confirm('Are you sure you want to remove this animal?')) {
     try {
-      await API.del(`/pets/${id}`);
+      const { error } = await supabase
+        .from('pets')
+        .delete()
+        .eq('id', id)
+        .eq('owner_id', User.getUser().id);
+      
+      if (error) throw error;
       animals = animals.filter(a => a.id !== id);
       renderAnimals();
       showToast('Animal removed 🗑️');
@@ -857,71 +1051,15 @@ async function deleteAnimal(id) {
   }
 }
 
-// ------------------------- Messenger (Real API) -------------------------
-async function loadConversations() {
-  try {
-    const convs = await API.get('/conversations');
-    mockContacts = convs.map(c => ({
-      id: c.userId,
-      name: c.userName,
-      avatar: c.userAvatar,
-      lastMessage: c.lastMessage,
-      time: formatDate(c.lastMessageTime),
-      unread: c.unreadCount
-    }));
-    renderContacts();
-  } catch (err) { console.error('Failed to load conversations', err); }
-}
-async function loadMessages(contactId) {
-  try {
-    const msgs = await API.get(`/messages/${contactId}`);
-    mockMessages[contactId] = msgs.map(m => ({
-      id: m.id,
-      sender: m.senderId === User.getUser().id ? 'me' : 'them',
-      text: m.text,
-      image: m.image,
-      time: formatDate(m.createdAt, true)
-    }));
-    renderMessages(contactId);
-    await API.post(`/messages/${contactId}/read`);
-  } catch (err) { console.error('Failed to load messages', err); }
-}
-async function sendMessageToApi(contactId, text, imageData) {
-  let imageUrl = null;
-  if (imageData) {
-    const formData = new FormData();
-    formData.append('image', imageData);
-    const uploadRes = await fetch(`${API.base}/upload`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('breedlink_token')}` },
-      body: formData
-    });
-    if (uploadRes.ok) {
-      const uploadJson = await uploadRes.json();
-      imageUrl = uploadJson.url;
-    }
-  }
-  const payload = { to: contactId, text: text || '', image: imageUrl };
-  const newMsg = await API.post('/messages', payload);
-  if (!mockMessages[contactId]) mockMessages[contactId] = [];
-  mockMessages[contactId].push({
-    id: newMsg.id,
-    sender: 'me',
-    text: newMsg.text,
-    image: newMsg.image,
-    time: formatDate(newMsg.createdAt, true)
-  });
-  renderMessages(contactId);
-  await loadConversations();
-}
+// ------------------------- Messenger (Placeholder - to be implemented) -------------------------
 function openMessenger() {
   const overlay = document.getElementById('messengerOverlay');
   if (overlay) {
     overlay.classList.add('active');
     overlay.style.display = 'flex';
-    loadConversations();
   }
 }
+
 function closeMessenger() {
   const overlay = document.getElementById('messengerOverlay');
   if (overlay) {
@@ -930,116 +1068,17 @@ function closeMessenger() {
   }
   currentChatId = null;
 }
+
 function renderContacts() {
   const container = document.getElementById('contactsListContainer');
   if (!container) return;
-  if (!mockContacts.length) {
-    container.innerHTML = '<div style="text-align: center; padding: 40px;">No conversations yet</div>';
-    return;
-  }
-  container.innerHTML = mockContacts.map(contact => `
-    <div class="contact-item ${contact.unread > 0 ? 'unread' : ''}" onclick="openChat(${contact.id})">
-      <img src="${contact.avatar}" alt="${contact.name}" class="contact-avatar">
-      <div class="contact-info">
-        <div class="contact-name">${escapeHtml(contact.name)}</div>
-        <div class="contact-preview">${escapeHtml(contact.lastMessage)}</div>
-      </div>
-      <div class="contact-meta">
-        <span class="contact-time">${contact.time}</span>
-        ${contact.unread > 0 ? `<span class="unread-badge">${contact.unread}</span>` : ''}
-      </div>
-    </div>
-  `).join('');
+  container.innerHTML = '<div style="text-align: center; padding: 40px;">Messaging coming soon</div>';
 }
-async function openChat(contactId) {
-  currentChatId = contactId;
-  const contact = mockContacts.find(c => c.id === contactId);
-  if (!contact) return;
-  const messengerContacts = document.getElementById('messengerContacts');
-  const messengerChat = document.getElementById('messengerChat');
-  const messengerEmpty = document.getElementById('messengerEmpty');
-  const chatHeaderName = document.getElementById('chatHeaderName');
-  const chatHeaderAvatar = document.getElementById('chatHeaderAvatar');
-  if (messengerContacts) messengerContacts.style.display = 'none';
-  if (messengerChat) messengerChat.style.display = 'flex';
-  if (messengerEmpty) messengerEmpty.style.display = 'none';
-  if (chatHeaderName) chatHeaderName.textContent = contact.name;
-  if (chatHeaderAvatar) chatHeaderAvatar.src = contact.avatar;
-  await loadMessages(contactId);
-  contact.unread = 0;
-  renderContacts();
+
+function openChat(contactId) {
+  showToast('Chat feature coming soon');
 }
-function renderMessages(contactId) {
-  const container = document.getElementById('messagesContainer');
-  if (!container) return;
-  const messages = mockMessages[contactId] || [];
-  if (!messages.length) {
-    container.innerHTML = '<div style="text-align: center; padding: 40px;">Start a conversation!</div>';
-  } else {
-    container.innerHTML = messages.map(msg => `
-      <div class="message ${msg.sender === 'me' ? 'sent' : 'received'}">
-        <div class="message-bubble">
-          ${msg.image ? `<img src="${msg.image}" style="max-width:200px; border-radius:12px;"><br>` : ''}
-          ${escapeHtml(msg.text || '')}
-        </div>
-        <div class="message-time">${msg.time}</div>
-      </div>
-    `).join('');
-  }
-  container.scrollTop = container.scrollHeight;
-}
-async function sendMessage() {
-  const input = document.getElementById('messageInput');
-  if (!input || !currentChatId) return;
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = '';
-  await sendMessageToApi(currentChatId, text, null);
-}
-function handleMessageInput(event) {
-  if (event.key === 'Enter') sendMessage();
-}
-async function sendImage(fileInput) {
-  const file = fileInput.files[0];
-  if (!file || !currentChatId) return;
-  await sendMessageToApi(currentChatId, null, file);
-  fileInput.value = '';
-}
-function searchContacts(query) {
-  if (!query.trim()) {
-    renderContacts();
-    return;
-  }
-  const filtered = mockContacts.filter(c => c.name.toLowerCase().includes(query.toLowerCase()));
-  const container = document.getElementById('contactsListContainer');
-  if (!container) return;
-  if (!filtered.length) {
-    container.innerHTML = '<div style="text-align: center; padding: 40px;">No contacts found</div>';
-    return;
-  }
-  container.innerHTML = filtered.map(contact => `
-    <div class="contact-item" onclick="openChat(${contact.id})">
-      <img src="${contact.avatar}" alt="${contact.name}" class="contact-avatar">
-      <div class="contact-info">
-        <div class="contact-name">${escapeHtml(contact.name)}</div>
-        <div class="contact-preview">${escapeHtml(contact.lastMessage)}</div>
-      </div>
-      <div class="contact-meta">
-        <span class="contact-time">${contact.time}</span>
-        ${contact.unread > 0 ? `<span class="unread-badge">${contact.unread}</span>` : ''}
-      </div>
-    </div>
-  `).join('');
-}
-function handleIncomingChatRequest() {
-  const chatWith = sessionStorage.getItem('chatWith');
-  if (chatWith) {
-    const breeder = JSON.parse(chatWith);
-    sessionStorage.removeItem('chatWith');
-    // No need to add contact manually – it will be loaded from conversations
-    setTimeout(() => { openMessenger(); }, 500);
-  }
-}
+
 function closeChat() {
   const messengerContacts = document.getElementById('messengerContacts');
   const messengerChat = document.getElementById('messengerChat');
@@ -1049,6 +1088,18 @@ function closeChat() {
   if (messengerEmpty) messengerEmpty.style.display = 'flex';
   currentChatId = null;
 }
+
+function sendMessage() {
+  showToast('Messaging coming soon');
+}
+
+function searchContacts(query) {}
+
+function handleMessageInput(event) {}
+
+function sendImage(fileInput) {}
+
+function handleIncomingChatRequest() {}
 
 // ------------------------- Event Listeners & Init -------------------------
 function setupEventListeners() {
@@ -1062,13 +1113,20 @@ function setupEventListeners() {
 }
 
 document.addEventListener('DOMContentLoaded', async function() {
-  if (!User.isAuthenticated()) { window.location.href = '../html/login.html'; return; }
+  if (!User.isAuthenticated()) { 
+    window.location.href = 'login.html'; 
+    return; 
+  }
   await loadProfile();
   await loadPosts();
   await loadAnimals();
+  
   const urlParams = new URLSearchParams(window.location.search);
   const enableEdit = urlParams.get('edit') === 'true' || sessionStorage.getItem('enableEdit') === 'true';
-  if (enableEdit) { enableEditMode(); sessionStorage.removeItem('enableEdit'); }
+  if (enableEdit) { 
+    enableEditMode(); 
+    sessionStorage.removeItem('enableEdit'); 
+  }
   updateProfileUI();
   renderPosts();
   renderAnimals();
