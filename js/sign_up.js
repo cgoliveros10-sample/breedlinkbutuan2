@@ -199,7 +199,7 @@ async function createAccount() {
         return;
     }
     
-    if (!Validators.email(email)) {
+    if (typeof Validators !== 'undefined' && !Validators.email(email)) {
         showToast('Please enter a valid email address', 'error');
         return;
     }
@@ -240,7 +240,7 @@ async function createAccount() {
             throw new Error('Signup function not available. Please refresh the page.');
         }
         
-        console.log('Calling User.signup with:', { name, email, accountType: selectedAccountType });
+        console.log('Calling User.signup...');
         
         // Call the signup method
         const user = await User.signup({
@@ -251,22 +251,25 @@ async function createAccount() {
             phone: phone
         });
         
-        console.log('Signup successful:', user);
+        console.log('Signup response:', user);
         
-        // Show success state
+        // SUCCESS - Show success message
+        showToast(`Welcome to BreedLink, ${user.name || name}! 🎉`, 'success');
+        
+        // Hide the form and show success state
         const formStep3 = document.getElementById('formStep3');
         const progressBar = document.querySelector('.progress-bar');
         const signupHeader = document.querySelector('.signup-header');
         const logoContainer = document.querySelector('.logo-container');
         const successState = document.getElementById('successState');
+        const loginLink = document.querySelector('.login-link');
         
         if (formStep3) formStep3.classList.remove('active');
         if (progressBar) progressBar.style.display = 'none';
         if (signupHeader) signupHeader.style.display = 'none';
         if (logoContainer) logoContainer.style.display = 'none';
+        if (loginLink) loginLink.style.display = 'none';
         if (successState) successState.classList.add('active');
-        
-        showToast(`Welcome to BreedLink, ${user.name}! 🎉`, 'success');
         
         // Redirect to profile page after 2 seconds
         setTimeout(() => {
@@ -275,7 +278,19 @@ async function createAccount() {
         
     } catch (error) {
         console.error('Signup error:', error);
-        showToast(error.message || 'Account creation failed. Please try again.', 'error');
+        
+        // Show specific error messages
+        let errorMessage = error.message || 'Account creation failed. Please try again.';
+        
+        if (errorMessage.includes('already registered')) {
+            errorMessage = 'This email is already registered. Please login instead.';
+        } else if (errorMessage.includes('password')) {
+            errorMessage = 'Password must be at least 8 characters with letters and numbers.';
+        } else if (errorMessage.includes('rate_limit')) {
+            errorMessage = 'Too many attempts. Please wait a minute and try again.';
+        }
+        
+        showToast(errorMessage, 'error');
         
         // Reset button
         if (btn) {
