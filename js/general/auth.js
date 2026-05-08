@@ -1,3 +1,7 @@
+if (typeof supabase === 'undefined') {
+  console.error('Supabase not initialized. Check config.js loading order.');
+}
+
 const User = {
   current: null,
 
