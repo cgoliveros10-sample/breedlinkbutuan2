@@ -159,7 +159,14 @@
     </div>
   </footer>
  
-  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script type="importmap">
+    {
+        "imports": {
+            "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+        }
+    }
+</script>
+<script type="module" src="../js/general/supabase-init.js"></script>
   <script src="js/general/config.js"></script>
   <script src="js/general/utils.js"></script>
   <script src="js/general/auth.js"></script>
