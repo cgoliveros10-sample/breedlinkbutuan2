@@ -2,102 +2,114 @@ const User = {
   current: null,
 
   async login(email, password) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw new Error(error.message);
-    
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', data.user.id)
-      .single();
-    
-    if (profileError && profileError.code !== 'PGRST116') {
-      console.error('Profile fetch error:', profileError);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw new Error(error.message);
+      
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', data.user.id)
+        .single();
+      
+      if (profileError && profileError.code !== 'PGRST116') {
+        console.error('Profile fetch error:', profileError);
+      }
+      
+      this.current = {
+        id: data.user.id,
+        name: profile?.name || data.user.email.split('@')[0],
+        email: data.user.email,
+        avatar: profile?.profile_picture || '../html/assets/animals/doge.png',
+        coverPhoto: profile?.cover_photo || 'https://images.unsplash.com/photo-1450778869180-41d0601e046e?w=1200',
+        bio: profile?.bio || '',
+        tags: profile?.tags || [],
+        accountType: profile?.account_type || 'breeder',
+        contact: profile?.contact || { email: data.user.email, phone: '', location: '' },
+        stats: profile?.stats || { connections: 0, litters: 0, rating: 0 }
+      };
+      
+      localStorage.setItem('breedlink_token', data.session.access_token);
+      localStorage.setItem('breedlink_user', JSON.stringify(this.current));
+      return this.current;
+    } catch (error) {
+      throw new Error(error.message);
     }
-    
-    this.current = {
-      id: data.user.id,
-      name: profile?.name || data.user.email.split('@')[0],
-      email: data.user.email,
-      avatar: profile?.profile_picture || '../html/assets/animals/doge.png',
-      coverPhoto: profile?.cover_photo || 'https://images.unsplash.com/photo-1450778869180-41d0601e046e?w=1200',
-      bio: profile?.bio || '',
-      tags: profile?.tags || [],
-      accountType: profile?.account_type || 'breeder',
-      contact: profile?.contact || { email: data.user.email, phone: '', location: '' },
-      stats: profile?.stats || { connections: 0, litters: 0, rating: 0 }
-    };
-    
-    localStorage.setItem('breedlink_token', data.session.access_token);
-    localStorage.setItem('breedlink_user', JSON.stringify(this.current));
-    return this.current;
   },
 
   async signup(userData) {
-    const { data, error } = await supabase.auth.signUp({
-      email: userData.email,
-      password: userData.password,
-      options: {
-        data: {
-          name: userData.name,
-          account_type: userData.accountType
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: userData.email,
+        password: userData.password,
+        options: {
+          data: {
+            name: userData.name,
+            account_type: userData.accountType
+          }
         }
+      });
+      
+      if (error) throw new Error(error.message);
+      if (!data.user) throw new Error('Signup failed');
+      
+      const defaultContact = {
+        email: userData.email,
+        phone: '',
+        location: 'Butuan City, Philippines'
+      };
+      
+      const defaultStats = {
+        connections: 0,
+        litters: 0,
+        rating: 0
+      };
+      
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: data.user.id,
+          name: userData.name,
+          account_type: userData.accountType,
+          profile_picture: '../html/assets/animals/doge.png',
+          cover_photo: 'https://images.unsplash.com/photo-1450778869180-41d0601e046e?w=1200',
+          bio: '',
+          tags: [],
+          contact: defaultContact,
+          stats: defaultStats
+        });
+      
+      if (profileError) {
+        console.error('Profile creation error:', profileError);
       }
-    });
-    
-    if (error) throw new Error(error.message);
-    if (!data.user) throw new Error('Signup failed');
-    
-    const defaultContact = {
-      email: userData.email,
-      phone: '',
-      location: 'Butuan City, Philippines'
-    };
-    
-    const defaultStats = {
-      connections: 0,
-      litters: 0,
-      rating: 0
-    };
-    
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({
+      
+      this.current = {
         id: data.user.id,
         name: userData.name,
-        account_type: userData.accountType,
-        profile_picture: '../html/assets/animals/doge.png',
-        cover_photo: 'https://images.unsplash.com/photo-1450778869180-41d0601e046e?w=1200',
+        email: userData.email,
+        avatar: '../html/assets/animals/doge.png',
+        coverPhoto: 'https://images.unsplash.com/photo-1450778869180-41d0601e046e?w=1200',
         bio: '',
         tags: [],
+        accountType: userData.accountType,
         contact: defaultContact,
         stats: defaultStats
-      });
-    
-    if (profileError) {
-      console.error('Profile creation error:', profileError);
+      };
+      
+      localStorage.setItem('breedlink_token', data.session?.access_token || '');
+      localStorage.setItem('breedlink_user', JSON.stringify(this.current));
+      return this.current;
+    } catch (error) {
+      throw new Error(error.message);
     }
-    
-    this.current = {
-      id: data.user.id,
-      name: userData.name,
-      email: userData.email,
-      avatar: '../html/assets/animals/doge.png',
-      coverPhoto: 'https://images.unsplash.com/photo-1450778869180-41d0601e046e?w=1200',
-      bio: '',
-      tags: [],
-      accountType: userData.accountType,
-      contact: defaultContact,
-      stats: defaultStats
-    };
-    
-    localStorage.setItem('breedlink_token', data.session?.access_token || '');
-    localStorage.setItem('breedlink_user', JSON.stringify(this.current));
-    return this.current;
   },
 
   async logout() {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
     this.current = null;
     localStorage.removeItem('breedlink_token');
     localStorage.removeItem('breedlink_user');
@@ -126,56 +138,68 @@ const User = {
   },
 
   async updateUser(updates) {
-    const updateData = {};
-    if (updates.name !== undefined) updateData.name = updates.name;
-    if (updates.bio !== undefined) updateData.bio = updates.bio;
-    if (updates.tags !== undefined) updateData.tags = updates.tags;
-    if (updates.contact !== undefined) updateData.contact = updates.contact;
-    if (updates.stats !== undefined) updateData.stats = updates.stats;
-    if (updates.profilePicture !== undefined) updateData.profile_picture = updates.profilePicture;
-    if (updates.coverPhoto !== undefined) updateData.cover_photo = updates.coverPhoto;
-    
-    const { data, error } = await supabase
-      .from('profiles')
-      .update(updateData)
-      .eq('id', this.current.id)
-      .select();
-    
-    if (error) throw new Error(error.message);
-    
-    this.current = { ...this.current, ...updates };
-    if (data && data[0]) {
-      this.current.avatar = data[0].profile_picture || this.current.avatar;
-      this.current.coverPhoto = data[0].cover_photo || this.current.coverPhoto;
-      this.current.bio = data[0].bio || this.current.bio;
-      this.current.tags = data[0].tags || this.current.tags;
-      this.current.contact = data[0].contact || this.current.contact;
-      this.current.stats = data[0].stats || this.current.stats;
+    try {
+      const updateData = {};
+      if (updates.name !== undefined) updateData.name = updates.name;
+      if (updates.bio !== undefined) updateData.bio = updates.bio;
+      if (updates.tags !== undefined) updateData.tags = updates.tags;
+      if (updates.contact !== undefined) updateData.contact = updates.contact;
+      if (updates.stats !== undefined) updateData.stats = updates.stats;
+      if (updates.profilePicture !== undefined) updateData.profile_picture = updates.profilePicture;
+      if (updates.coverPhoto !== undefined) updateData.cover_photo = updates.coverPhoto;
+      
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(updateData)
+        .eq('id', this.current.id)
+        .select();
+      
+      if (error) throw new Error(error.message);
+      
+      this.current = { ...this.current, ...updates };
+      if (data && data[0]) {
+        this.current.avatar = data[0].profile_picture || this.current.avatar;
+        this.current.coverPhoto = data[0].cover_photo || this.current.coverPhoto;
+        this.current.bio = data[0].bio || this.current.bio;
+        this.current.tags = data[0].tags || this.current.tags;
+        this.current.contact = data[0].contact || this.current.contact;
+        this.current.stats = data[0].stats || this.current.stats;
+      }
+      
+      localStorage.setItem('breedlink_user', JSON.stringify(this.current));
+      return this.current;
+    } catch (error) {
+      throw new Error(error.message);
     }
-    
-    localStorage.setItem('breedlink_user', JSON.stringify(this.current));
-    return this.current;
   },
 
   async getProfile(userId) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-    
-    if (error) throw new Error(error.message);
-    return data;
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      
+      if (error) throw new Error(error.message);
+      return data;
+    } catch (error) {
+      throw new Error(error.message);
+    }
   },
 
   async getUsersByType(accountType) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('account_type', accountType);
-    
-    if (error) throw new Error(error.message);
-    return data;
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('account_type', accountType);
+      
+      if (error) throw new Error(error.message);
+      return data;
+    } catch (error) {
+      throw new Error(error.message);
+    }
   }
 };
 
@@ -279,12 +303,22 @@ async function handleSignup(event) {
   if (password !== confirmPassword) return showToast('Passwords do not match', 'error');
   if (!terms) return showToast('Please accept the Terms of Service', 'error');
   
+  const btn = document.getElementById('createBtn');
+  if (btn) {
+    btn.textContent = 'Creating...';
+    btn.disabled = true;
+  }
+  
   try {
     const user = await User.signup({ name, email, password, accountType });
     showToast(`Welcome to BreedLink, ${user.name}! 🎉`);
     setTimeout(() => window.location.href = 'profile.html', 800);
   } catch (error) {
     showToast(error.message, 'error');
+    if (btn) {
+      btn.textContent = 'Create Account';
+      btn.disabled = false;
+    }
   }
 }
 
@@ -326,7 +360,9 @@ function updateNavForAuthStatus() {
     if (profileMenu) {
       profileMenu.style.display = 'block';
       const profileBtn = document.getElementById('profileBtn');
-      if (profileBtn && user.avatar) profileBtn.innerHTML = `<img src="${user.avatar}" alt="${user.name}">`;
+      if (profileBtn && user.avatar) {
+        profileBtn.innerHTML = `<img src="${user.avatar}" alt="${user.name}">`;
+      }
     }
     if (guestOptions) guestOptions.style.display = 'none';
   } else {
