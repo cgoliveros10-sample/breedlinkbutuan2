@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+# Only private, per-user pages are excluded. Login / sign-up stay crawlable
+# so search engines and safe-browsing scanners can see the full site.
+Disallow: /pages/verify-otp.html
+Disallow: /pages/email-action.html
+Disallow: /pages/messages.html
+Disallow: /pages/profile.html
+
+Sitemap: https://breedlinkbutuan2.vercel.app/sitemap.xml
