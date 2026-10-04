@@ -723,6 +723,21 @@ console.log('Config loaded');
         }
     }, 3 * 60 * 1000); // check every 3 minutes
 
+    // ── rpc: call a Postgres function (used by vet verification) ──────────
+    window.supabase.rpc = async function (fn, args) {
+        try {
+            const response = await authedFetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(args || {})
+            });
+            const result = (response.status === 204) ? null : await response.json().catch(() => null);
+            return { data: response.ok ? result : null, error: response.ok ? null : (result || { message: 'Request failed (' + response.status + ')' }) };
+        } catch (error) {
+            return { data: null, error };
+        }
+    };
+
     // Expose credentials on window so other modules (e.g. auth.js resolveLoginIdentifier) can use them
     window.SUPABASE_URL      = SUPABASE_URL;
     window.SUPABASE_ANON_KEY = SUPABASE_ANON_KEY;
