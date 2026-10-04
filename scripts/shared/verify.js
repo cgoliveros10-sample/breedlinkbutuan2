@@ -28,15 +28,17 @@ window.VerifyUI = {
   const base = location.pathname.indexOf('/pages/') !== -1 ? '' : 'pages/';
   async function addPanelLink() {
     const dd = document.getElementById('profileDropdown');
-    if (!dd || dd.querySelector('.vet-panel-link') || !window.waitForSupabase) return;
+    if (!dd) return console.warn('[VerifyUI] no #profileDropdown on this page');
+    if (dd.querySelector('.vet-panel-link')) return;
+    if (!window.waitForSupabase) return console.warn('[VerifyUI] waitForSupabase missing');
     const sb = await window.waitForSupabase();
-    if (!sb) return;
+    if (!sb) return console.warn('[VerifyUI] supabase not ready');
     const { data: { session } } = await sb.auth.getSession();
-    if (!session) return;
-    const { data: me } = await sb.from('profiles').select('account_type,vet_status,is_admin').eq('id', session.user.id).single();
-    if (!me) return;
+    if (!session) return console.warn('[VerifyUI] no session');
+    const { data: me, error: meErr } = await sb.from('profiles').select('account_type,vet_status,is_admin').eq('id', session.user.id).single();
+    if (meErr || !me) return console.warn('[VerifyUI] profile lookup failed', meErr);
     const canReview = me.is_admin || me.vet_status === 'approved';
-    if (!canReview && me.account_type !== 'vet') return;
+    if (!canReview && me.account_type !== 'vet') return console.warn('[VerifyUI] not a vet/admin', me);
     let count = 0;
     if (canReview) {
       const q = await sb.from('verification_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending');
@@ -53,6 +55,9 @@ window.VerifyUI = {
     const anchor = dd.querySelector('.profile-dropdown-divider');
     dd.insertBefore(a, anchor || dd.firstChild);
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', addPanelLink);
-  else addPanelLink();
+  const run = () => addPanelLink().catch(e => console.warn('[VerifyUI] failed', e));
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+  else run();
+  // second try in case login state settles after page load
+  setTimeout(run, 2500);
 })();
