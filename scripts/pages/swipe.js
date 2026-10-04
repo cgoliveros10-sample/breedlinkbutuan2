@@ -51,6 +51,7 @@ async function loadSwipeAnimals() {
             parentSire: animal.parent_sire || '',
             parentDam: animal.parent_dam || '',
             litterReg: animal.litter_registration || '',
+            verification_status: animal.verification_status, verified_clinic: animal.verified_clinic,
             owner: animal.profiles?.name || 'Unknown',
             ownerAvatar: animal.profiles?.profile_picture,
             ownerBio: animal.profiles?.bio || '',
@@ -210,6 +211,7 @@ function createCard(animal) {
     card.setAttribute('data-id', animal.id);
     
     card.innerHTML = `
+        ${animal.verification_status === 'verified' && window.VerifyUI ? `<div style="position:absolute;top:12px;left:12px;z-index:5;">${VerifyUI.badge(animal)}</div>` : ''}
         <img class="card-image" src="${animal.image}" alt="${animal.name}" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=400'">
         <button class="info-btn" onclick="event.stopPropagation(); showPetDetails(${animal.id})"><svg class="bl-icon" xmlns="http://www.w3.org/2000/svg" width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-0.15em;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
         <div class="card-content">
