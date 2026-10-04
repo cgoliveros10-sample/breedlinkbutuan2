@@ -33,20 +33,20 @@ window.VerifyUI = {
     if (!window.waitForSupabase) return console.warn('[VerifyUI] waitForSupabase missing');
     const sb = await window.waitForSupabase();
     if (!sb) return console.warn('[VerifyUI] supabase not ready');
-    const { data: { session } } = await sb.auth.getSession();
-    if (!session) return console.warn('[VerifyUI] no session');
-    const { data: me, error: meErr } = await sb.from('profiles').select('account_type,vet_status,is_admin').eq('id', session.user.id).single();
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) return console.warn('[VerifyUI] not logged in');
+    const { data: me, error: meErr } = await sb.from('profiles').select('account_type,vet_status,is_admin').eq('id', user.id).single();
     if (meErr || !me) return console.warn('[VerifyUI] profile lookup failed', meErr);
     const canReview = me.is_admin || me.vet_status === 'approved';
     if (!canReview && me.account_type !== 'vet') return console.warn('[VerifyUI] not a vet/admin', me);
     let count = 0;
     if (canReview) {
-      const q = await sb.from('verification_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending');
-      count += q.count || 0;
+      const q = await sb.from('verification_requests').select('id').eq('status', 'pending');
+      count += (q.data || []).length;
     }
     if (me.is_admin) {
-      const q = await sb.from('profiles').select('id', { count: 'exact', head: true }).eq('vet_status', 'pending');
-      count += q.count || 0;
+      const q = await sb.from('profiles').select('id').eq('vet_status', 'pending');
+      count += (q.data || []).length;
     }
     const a = document.createElement('a');
     a.className = 'profile-dropdown-item vet-panel-link';
