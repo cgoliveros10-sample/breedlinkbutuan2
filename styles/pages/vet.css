@@ -1,5 +1,6 @@
 /* Vet Panel — matches the Breeders / About pages */
-.vet-page { max-width: 880px; margin: 0 auto; padding: 40px 20px 72px; }
+/* the site navbar is position:fixed, so leave room for it */
+.vet-page { max-width: 880px; margin: 0 auto; padding: 130px 20px 72px; }
 .vet-head { text-align: center; margin-bottom: 24px; }
 .vet-head h1 { font-size: 40px; font-weight: 800; color: var(--green-primary); margin: 0 0 8px; }
 .vet-head p { color: var(--text-secondary); font-size: 16px; margin: 0; }
@@ -32,6 +33,7 @@
 .vet-empty { text-align: center; color: var(--text-secondary); background: var(--surface-white); border: 1px dashed var(--border-light); border-radius: 20px; padding: 48px 20px; }
 .vet-empty strong { display: block; color: var(--text-primary); font-size: 18px; margin-bottom: 6px; }
 
+@media (max-width: 900px) { .vet-page { padding-top: 170px; } }
 @media (max-width: 600px) {
   .vet-head h1 { font-size: 30px; }
   .vet-row { flex-direction: column; }
