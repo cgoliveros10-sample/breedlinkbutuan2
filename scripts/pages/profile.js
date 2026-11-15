@@ -914,6 +914,7 @@ async function saveAnimal() {
     const isVaccinated = document.getElementById('animalVaccinated')?.checked || false;
     const isDewormed = document.getElementById('animalDewormed')?.checked || false;
     const description = document.getElementById('animalDescription')?.value.trim();
+    const preferredClinic = document.getElementById('animalClinic')?.value || '';
     const animalImageInput = document.getElementById('animalInput');
     const animalDocsInput = document.getElementById('animalDocuments');
     
@@ -962,7 +963,11 @@ async function saveAnimal() {
         // Try insert with category/type first; fall back without them if columns missing
         let data, error;
         const withExtra = { ...animalPayload, category: animalCategory || null, type: animalType || null };
-        ({ data, error } = await window.supabase.from('animals').insert(withExtra).select());
+        ({ data, error } = await window.supabase.from('animals').insert({ ...withExtra, preferred_clinic: preferredClinic || null }).select());
+        if (error && error.message?.includes('preferred_clinic')) {
+            ({ data, error } = await window.supabase.from('animals').insert(withExtra).select());
+            if (!error && preferredClinic) showToast('Animal saved, but the Preferred Clinic column is missing in the database', 'error');
+        }
         if (error && (error.message?.includes('category') || error.message?.includes('type') || error.code === '42703')) {
             // Columns don't exist yet — insert without them
             ({ data, error } = await window.supabase.from('animals').insert(animalPayload).select());
@@ -1064,6 +1069,7 @@ function viewAnimal(animalId) {
                 <div class="view-detail-item"><div class="view-detail-label">Vaccinated</div><div class="view-detail-value">${animal.is_vaccinated ? 'Yes' : 'No'}</div></div>
                 <div class="view-detail-item"><div class="view-detail-label">Dewormed</div><div class="view-detail-value">${animal.is_dewormed ? 'Yes' : 'No'}</div></div>
                 ${animal.last_vet_check ? `<div class="view-detail-item"><div class="view-detail-label">Last Vet Check</div><div class="view-detail-value">${escapeHtml(String(animal.last_vet_check))}</div></div>` : ''}
+                ${animal.preferred_clinic ? `<div class="view-detail-item"><div class="view-detail-label">Preferred Clinic</div><div class="view-detail-value">${escapeHtml(animal.preferred_clinic)}</div></div>` : ''}
                 ${animal.parent_sire ? `<div class="view-detail-item"><div class="view-detail-label">Sire (Father)</div><div class="view-detail-value">${escapeHtml(animal.parent_sire)}</div></div>` : ''}
                 ${animal.parent_dam ? `<div class="view-detail-item"><div class="view-detail-label">Dam (Mother)</div><div class="view-detail-value">${escapeHtml(animal.parent_dam)}</div></div>` : ''}
                 ${animal.litter_registration ? `<div class="view-detail-item"><div class="view-detail-label">Litter Registration</div><div class="view-detail-value">${escapeHtml(animal.litter_registration)}</div></div>` : ''}
@@ -1181,6 +1187,12 @@ function editAnimal(animalId) {
                     <option value="Retired" ${animal.status === 'Retired' ? 'selected' : ''}>Retired</option>
                 </select>
             </div>
+            <div class="animal-detail-item"><label>Preferred Clinic</label>
+                <select id="edit_clinic" style="width:100%;padding:10px 12px;border:1.5px solid var(--border-light);border-radius:10px;font-size:14px;outline:none;background:white;color:var(--text-primary);">
+                    <option value="">No preferred clinic</option>
+                    ${animal.preferred_clinic ? `<option value="${escapeHtml(animal.preferred_clinic)}" selected>${escapeHtml(animal.preferred_clinic)}</option>` : ''}
+                </select>
+            </div>
             <div class="animal-detail-item" style="grid-column:1/-1;">
                 <label>Health Status</label>
                 <div style="display:flex;gap:20px;padding:10px 14px;background:#f9fafb;border-radius:10px;border:1.5px solid var(--border-light);">
@@ -1227,6 +1239,7 @@ function editAnimal(animalId) {
         </div>
     `;
     openModal('animalDetailModal');
+    if (window.VerifyUI) VerifyUI.fillClinicSelect('edit_clinic', animal.preferred_clinic || '');
 }
 
 async function saveAnimalDetails() {
@@ -1251,6 +1264,7 @@ async function saveAnimalDetails() {
     animal.type = document.getElementById('edit_type')?.value || animal.type || '';
     animal.is_vaccinated = document.getElementById('edit_vaccinated')?.checked || false;
     animal.is_dewormed = document.getElementById('edit_dewormed')?.checked || false;
+    animal.preferred_clinic = document.getElementById('edit_clinic')?.value || '';
     
     const imgInput = document.getElementById('edit_imageInput');
     const croppedEditFile = window._croppedFiles && window._croppedFiles['animalEdit'];
@@ -1276,24 +1290,33 @@ async function saveAnimalDetails() {
     }
     
     try {
-        await window.supabase
+        const updatePayload = {
+            name: animal.name,
+            breed: animal.breed,
+            gender: animal.gender,
+            age: animal.age,
+            status: animal.status,
+            description: animal.description,
+            image_url: animal.image_url,
+            category: animal.category || null,
+            type: animal.type || null,
+            is_vaccinated: animal.is_vaccinated,
+            is_dewormed: animal.is_dewormed,
+            health_documents: animal.health_documents || []
+        };
+        let { error: updateError } = await window.supabase
             .from('animals')
-            .update({
-                name: animal.name,
-                breed: animal.breed,
-                gender: animal.gender,
-                age: animal.age,
-                status: animal.status,
-                description: animal.description,
-                image_url: animal.image_url,
-                category: animal.category || null,
-                type: animal.type || null,
-                is_vaccinated: animal.is_vaccinated,
-                is_dewormed: animal.is_dewormed,
-                health_documents: animal.health_documents || []
-            })
+            .update({ ...updatePayload, preferred_clinic: animal.preferred_clinic || null })
             .eq('id', currentAnimalId)
             .eq('user_id', currentUserId);
+        if (updateError && updateError.message?.includes('preferred_clinic')) {
+            await window.supabase
+                .from('animals')
+                .update(updatePayload)
+                .eq('id', currentAnimalId)
+                .eq('user_id', currentUserId);
+            showToast('Saved, but the Preferred Clinic column is missing in the database', 'error');
+        }
         
         renderAnimals();
         showToast('Animal updated successfully!');
@@ -1363,6 +1386,7 @@ function addNewTag() {
 
 function openAddAnimalModal() {
     openModal('animalModal');
+    if (window.VerifyUI) VerifyUI.fillClinicSelect('animalClinic', '', 'Preferred Clinic (optional)');
 }
 
 function openContactModal() {
