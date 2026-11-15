@@ -48,6 +48,7 @@ async function loadSwipeAnimals() {
             isVaccinated: animal.is_vaccinated || false,
             isDewormed: animal.is_dewormed || false,
             lastVetCheck: animal.last_vet_check || '',
+            preferredClinic: animal.preferred_clinic || '',
             parentSire: animal.parent_sire || '',
             parentDam: animal.parent_dam || '',
             litterReg: animal.litter_registration || '',
@@ -774,6 +775,7 @@ async function showPetDetails(animalId) {
         ['Vaccinated', animal.isVaccinated ? 'Yes' : 'No'],
         ['Dewormed', animal.isDewormed ? 'Yes' : 'No'],
         animal.lastVetCheck ? ['Last Vet Check', escapeHtml(String(animal.lastVetCheck))] : null,
+        animal.preferredClinic ? ['Preferred Clinic', escapeHtml(animal.preferredClinic)] : null,
         animal.parentSire ? ['Sire (Father)', escapeHtml(animal.parentSire)] : null,
         animal.parentDam ? ['Dam (Mother)', escapeHtml(animal.parentDam)] : null,
         animal.litterReg ? ['Litter Registration', escapeHtml(animal.litterReg)] : null,
@@ -988,6 +990,23 @@ function _populateFilterDropdowns() {
         });
         breedSelect.appendChild(otherGroup);
     }
+
+    const clinicSelect = document.getElementById('clinicSelect');
+    if (clinicSelect) {
+        const keep = clinicSelect.value;
+        const clinics = new Set();
+        (_allSwipeAnimals.length ? _allSwipeAnimals : currentAnimals).forEach(a => {
+            if (a.preferredClinic) clinics.add(a.preferredClinic);
+        });
+        clinicSelect.innerHTML = '<option value="">All Clinics</option>';
+        [...clinics].sort((a, b) => a.localeCompare(b)).forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            clinicSelect.appendChild(opt);
+        });
+        clinicSelect.value = clinics.has(keep) ? keep : '';
+    }
 }
 
 // Mapping of which types belong to which category
@@ -1021,9 +1040,10 @@ let _allSwipeAnimals = [];
 function applyFilters() {
     const animalType = document.getElementById('breedSelect')?.value?.toLowerCase();
     const category = document.getElementById('categorySelect')?.value?.toLowerCase();
+    const clinic = document.getElementById('clinicSelect')?.value || '';
 
     // If no filters, restore from cache
-    if (!animalType && !category) {
+    if (!animalType && !category && !clinic) {
         if (_allSwipeAnimals.length > 0) {
             currentAnimals = [..._allSwipeAnimals];
             renderCards();
@@ -1050,6 +1070,7 @@ function applyFilters() {
         if (animalType && animalType !== '') {
             if (!combined.includes(animalType)) return false;
         }
+        if (clinic && (a.preferredClinic || '') !== clinic) return false;
         return true;
     });
 
@@ -1082,6 +1103,8 @@ async function resetFilters() {
     if (breedSelect) breedSelect.value = '';
     const categorySelect = document.getElementById('categorySelect');
     if (categorySelect) categorySelect.value = '';
+    const clinicSelect = document.getElementById('clinicSelect');
+    if (clinicSelect) clinicSelect.value = '';
     if (matchesList) renderBreedersTab('liked');
     await loadSwipeAnimals();
     showToast('Swipe deck reset!');

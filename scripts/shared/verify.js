@@ -1,5 +1,24 @@
 // verify.js — Vet-Verified badge + owner request helper
 window.VerifyUI = {
+  _clinics: null,
+  async loadClinics() {
+    if (this._clinics) return this._clinics;
+    const { data } = await window.supabase.from('profiles').select('clinic_name').eq('vet_status', 'approved');
+    const names = [...new Set((data || []).map(r => String(r.clinic_name || '').trim()).filter(Boolean))];
+    names.sort((a, b) => a.localeCompare(b));
+    this._clinics = names;
+    return names;
+  },
+  async fillClinicSelect(id, selected, emptyLabel) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const names = await this.loadClinics();
+    const list = selected && !names.includes(selected) ? [...names, selected] : names;
+    const label = names.length || selected ? (emptyLabel || 'No preferred clinic') : 'No approved clinics yet';
+    el.innerHTML = `<option value="">${esc(label)}</option>` + list.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    el.value = selected || '';
+  },
   badge(item) {
     const s = item && item.verification_status;
     const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
