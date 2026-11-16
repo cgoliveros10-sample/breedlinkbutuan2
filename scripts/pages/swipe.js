@@ -926,7 +926,7 @@ async function showDocuments(animalId) {
                 <h3 style="margin-bottom:16px;">Health Documents — ${escapeHtml(data.name)}</h3>
                 <div style="display:flex;flex-direction:column;gap:10px;">
                     ${docs.map(doc => `
-                        <a href="${doc.url || doc}" target="_blank" rel="noopener"
+                        <a href="#" data-doc="${escapeHtml(doc.url || doc)}" onclick="event.preventDefault();openHealthDoc(this)"
                            style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--bg-secondary);border-radius:12px;text-decoration:none;color:var(--text-primary);font-weight:500;font-size:14px;border:1px solid var(--border-light);">
                             <span style="font-size:24px;"></span>
                             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(doc.name || 'Document')}</span>
