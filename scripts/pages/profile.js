@@ -1080,7 +1080,7 @@ function viewAnimal(animalId) {
                     <h4>Health Documents</h4>
                     <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
                         ${animal.health_documents.map(doc => `
-                            <a href="${doc.url || doc}" target="_blank" rel="noopener"
+                            <a href="#" data-doc="${escapeHtml(doc.url || doc)}" onclick="event.preventDefault();openHealthDoc(this)"
                                style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:var(--green-light);color:var(--green-primary);border-radius:50px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid var(--green-primary);transition:all 0.2s;"
                                onmouseover="this.style.background='var(--green-primary)';this.style.color='white';"
                                onmouseout="this.style.background='var(--green-light)';this.style.color='var(--green-primary)';">
