@@ -1,7 +1,7 @@
 // upload.js — BreedLink image/file upload helpers
 // Uses window.supabase.storage (from db.js); db.js owns all token refresh logic.
 
-// Private buckets use signed URLs; add 'messages' once its policies are updated.
+// Private buckets use signed URLs; add 'messages' once its policies are updated
 const PRIVATE_BUCKETS = ['documents'];
 
 const StorageAPI = {
