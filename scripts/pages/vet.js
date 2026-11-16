@@ -34,7 +34,7 @@
       const { data: t } = await sb.from(table).select('*').eq('id', r.target_id).single();
       const { data: o } = await sb.from('profiles').select('name').eq('id', r.owner_id).single();
       if (!t) continue;
-      const docs = (t.health_documents || []).map((d, i) => `<a href="${esc(d.url || d)}" target="_blank" rel="noopener">${esc(d.name || 'Document ' + (i + 1))}</a>`).join(' · ') || (r.target_type === 'animal' ? 'No documents attached' : '');
+      const docs = (t.health_documents || []).map((d, i) => `<a href="#" data-doc="${esc(d.url || d)}">${esc(d.name || 'Document ' + (i + 1))}</a>`).join(' · ') || (r.target_type === 'animal' ? 'No documents attached' : '');
       const title = r.target_type === 'animal' ? `${esc(t.name)} (${esc(t.breed)}, ${esc(t.age)})` : esc((t.text || 'Post').slice(0, 80));
       const img = t.image_url || (Array.isArray(t.images) && t.images[0]) || '';
       html.push(`<div class="vet-card"><div class="vet-row">${img ? `<img src="${esc(img)}" alt="">` : ''}<div>
@@ -46,6 +46,7 @@
     }
     view.innerHTML = html.join('') || '<div class="vet-empty"><strong>No requests waiting</strong>New verification requests will show up here.</div>';
     view.onclick = e => {
+      if (e.target.dataset.doc) { e.preventDefault(); openHealthDoc(e.target); return; }
       if (e.target.dataset.a) act('review_verification', { _req: e.target.dataset.a, _approve: true, _reason: null });
       if (e.target.dataset.r) {
         const why = document.getElementById('why-' + e.target.dataset.r).value.trim();
