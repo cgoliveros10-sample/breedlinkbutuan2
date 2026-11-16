@@ -9,11 +9,11 @@
 //       SUPABASE_ANON_KEY → your project's anon/public JWT
 //
 //     Netlify:  Site settings → Environment variables
-//     Vercel:   Project settings → Environment variable
+//     Vercel:   Project settings → Environment variables
 //
 //     The %%VAR%% tokens below are replaced by the build plugin / edge
 //     function before the file is served.  If you see a literal
-//     "%%SUPABASE_URL%%" in the browser, the substitution step is missing
+//     "%%SUPABASE_URL%%" in the browser, the substitution step is missing.
 //
 const SUPABASE_URL      = '%%SUPABASE_URL%%';
 const SUPABASE_ANON_KEY = '%%SUPABASE_ANON_KEY%%';
