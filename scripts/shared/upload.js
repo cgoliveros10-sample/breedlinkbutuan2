@@ -1,7 +1,7 @@
 // upload.js — BreedLink image/file upload helpers
 // Uses window.supabase.storage (from db.js); db.js owns all token refresh logic.
 
-// Private buckets use signed URLs; add 'messages' once its policies are updated
+// Private buckets use signed URLs; add 'messages' once its policies are updated.
 const PRIVATE_BUCKETS = ['documents'];
 
 const StorageAPI = {
@@ -61,6 +61,19 @@ const StorageAPI = {
         const { data, error } = await store.createSignedUrl(path, expiresIn);
         if (error) throw new Error(error.message || error.error || 'Could not open file');
         return data.signedUrl || data.signedURL;
+    },
+
+    // Opens a stored file in a new tab through a signed URL.
+    async openFile(bucket, stored) {
+        const win = window.open('', '_blank');
+        try {
+            const url = await this.getSignedUrl(bucket, stored);
+            if (win) { win.opener = null; win.location.href = url; }
+            else window.location.href = url;
+        } catch (e) {
+            if (win) win.close();
+            throw e;
+        }
     },
 
     async uploadImage(file, bucket) {
@@ -136,4 +149,13 @@ const StorageAPI = {
 };
 
 window.StorageAPI = StorageAPI;
+
+window.openHealthDoc = async function (el) {
+    try {
+        await StorageAPI.openFile('documents', el.dataset.doc);
+    } catch (e) {
+        console.error('openHealthDoc error:', e);
+        showToast('Could not open this document. Health records can only be opened by the owner and verifying veterinarians.', 'error');
+    }
+};
 console.log('StorageAPI ready');
