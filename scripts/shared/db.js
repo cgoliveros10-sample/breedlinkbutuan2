@@ -708,6 +708,23 @@ console.log('Config loaded');
                     },
                     getPublicUrl(path) {
                         return { data: { publicUrl: `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}` } };
+                    },
+                    async createSignedUrl(path, expiresIn = 3600) {
+                        try {
+                            const encoded = String(path).split('/').map(encodeURIComponent).join('/');
+                            const response = await authedFetch(`${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${encoded}`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ expiresIn })
+                            });
+                            const body = await response.json().catch(() => ({}));
+                            if (!response.ok || !body.signedURL) {
+                                return { data: null, error: { message: body.message || body.error || ('Could not sign URL (' + response.status + ')') } };
+                            }
+                            return { data: { signedUrl: `${SUPABASE_URL}/storage/v1${body.signedURL}` }, error: null };
+                        } catch (error) {
+                            return { data: null, error };
+                        }
                     }
                 };
             }
